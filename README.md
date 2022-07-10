@@ -1,1 +1,1 @@
-# twisty-terminals
+#[ModKit Wiki](../../wiki)
