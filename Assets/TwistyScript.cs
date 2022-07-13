@@ -29,12 +29,15 @@ public class TwistyScript : MonoBehaviour {
       "24", "66", "45", "22", "46", "77"};
     private string[] valcon = new string[6];
     private int[,][] rots = new int[4, 4][];
+    private int[] tprots = new int[16];
     private int[] lastrot = new int[2] { -1, 0 };
     private bool turn;
     private bool loose;
+    private bool tpsub;
 
     private static int moduleIDCounter;
     private int moduleID;
+    private bool moduleSolved;
 
     private int[] Connect()
     {
@@ -134,11 +137,16 @@ public class TwistyScript : MonoBehaviour {
         for(int i = 0; i < 3; i++)
             rots[s / 4, s % 4][i] = rots[s / 4, s % 4][i + 1];
         rots[s / 4, s % 4][3] = temp;
+        tprots[s]++;
+        if (tprots[s] > 3)
+            tprots[s] = 0;
         if (instant)
             terminals[s].Rotate(0, 0, 90);
         else
         {
             turn = true;
+            if (lastrot[0] == s && lastrot[1] == 3)
+                tpsub = true;
             Audio.PlaySoundAtTransform("Turn", terminals[s]);
             float e = 0;
             while (e < 0.5f)
@@ -239,6 +247,7 @@ public class TwistyScript : MonoBehaviour {
                     {
                         module.HandlePass();
                         Audio.PlaySoundAtTransform("Solve", transform);
+                        moduleSolved = true;
                     }
                     else
                     {
@@ -248,6 +257,7 @@ public class TwistyScript : MonoBehaviour {
                         lastrot[0] = -1;
                         lastrot[1] = 0;
                         turn = false;
+                        tpsub = false;
                     }
                 }
                 else
@@ -275,5 +285,115 @@ public class TwistyScript : MonoBehaviour {
             }
         }
         return c;
+    }
+
+    //twitch plays
+    #pragma warning disable 414
+    private readonly string TwitchHelpMessage = @"!{0} <A-D><1-4> <1-4> [Selects the terminal at the specified coordinate a certain number of times] | Commands can be chained using semicolons";
+    #pragma warning restore 414
+    IEnumerator ProcessTwitchCommand(string command)
+    {
+        command = command.Replace(" ", "").ToLowerInvariant();
+        string[] parameters = command.Split(';');
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            if (parameters[i].Length != 3)
+                yield break;
+            if (!parameters[i][0].EqualsAny('a', 'b', 'c', 'd'))
+                yield break;
+            if (!parameters[i][1].EqualsAny('1', '2', '3', '4'))
+                yield break;
+            if (!parameters[i][2].EqualsAny('1', '2', '3', '4'))
+                yield break;
+        }
+        if (tpsub)
+        {
+            yield return "sendtochaterror Terminals cannot be selected while the module is submitting!";
+            yield break;
+        }
+        yield return null;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            for (int j = 0; j < int.Parse(parameters[i][2].ToString()); j++)
+            {
+                while (turn) yield return "trycancel";
+                tselect["1234".IndexOf(parameters[i][1]) * 4 + "abcd".IndexOf(parameters[i][0])].OnInteract();
+                if (tpsub)
+                {
+                    if (tprots.Count(x => x == 0) == 16)
+                        yield return "solve";
+                    else
+                        yield return "strike";
+                    yield break;
+                }
+            }
+        }
+    }
+
+    IEnumerator TwitchHandleForcedSolve()
+    {
+        List<int> notzero = new List<int>();
+        for (int i = 0; i < 16; i++)
+        {
+            if (tprots[i] != 0)
+                notzero.Add(i);
+        }
+        if (notzero.Count != 0)
+        {
+            if (tpsub)
+            {
+                StopAllCoroutines();
+                for (int i = 0; i < 16; i++)
+                {
+                    bulbs[i].material = bmats[2];
+                    lights[i].color = new Color(0, 1, 0);
+                    lights[i].enabled = true;
+                }
+                module.HandlePass();
+                moduleSolved = true;
+                yield break;
+            }
+            if (notzero.First() == lastrot[0])
+            {
+                if (notzero.Count > 1)
+                {
+                    while (turn) yield return true;
+                    tselect[notzero[1]].OnInteract();
+                }
+                else
+                {
+                    while (turn) yield return true;
+                    int choice = Random.Range(0, 16);
+                    while (choice == notzero[0])
+                        choice = Random.Range(0, 16);
+                    tselect[choice].OnInteract();
+                    while (tprots[notzero[0]] != 0)
+                    {
+                        while (turn) yield return true;
+                        tselect[notzero[0]].OnInteract();
+                    }
+                }
+            }
+            for (int i = 0; i < 16; i++)
+            {
+                while (tprots[i] != 0)
+                {
+                    while (turn) yield return true;
+                    tselect[i].OnInteract();
+                }
+            }
+        }
+        if (!tpsub)
+        {
+            int choice2 = Random.Range(0, 16);
+            while (choice2 == lastrot[0])
+                choice2 = Random.Range(0, 16);
+            for (int i = 0; i < 4; i++)
+            {
+                while (turn) yield return true;
+                tselect[choice2].OnInteract();
+            }
+        }
+        while (!moduleSolved) yield return true;
     }
 }
